@@ -7,7 +7,7 @@ const email = ref("");
 const password = ref("");
 const router = useRouter();
 
-async function login(params) {
+async function login() {
   try {
     const responce = await fetch("http://127.0.0.1:8080/api/auth/login", {
       method: "POST",

@@ -1,5 +1,54 @@
 <script setup>
 import logo from "@/assets/whisperLogo.svg";
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+
+const username = ref("");
+const email = ref("");
+const password = ref("");
+const router = useRouter();
+
+async function register() {
+  try {
+    const response = await fetch("http://127.0.0.1:8080/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: username.value,
+        email: email.value,
+        password: password.value,
+        role: "ROLE_USER",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Ошибка регистрации");
+    }
+    await login();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+async function login() {
+  try {
+    const response = await fetch("http://127.0.0.1:8080/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: email.value,
+        password: password.value,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Ошибка входа");
+    }
+    const data = await response.json();
+    console.log(data);
+    localStorage.setItem("token", data.token);
+    router.push("/chats");
+  } catch (error) {
+    alert(error.message);
+  }
+}
 </script>
 
 <template>
@@ -9,10 +58,22 @@ import logo from "@/assets/whisperLogo.svg";
   <div class="center-wrapper">
     <div class="registration-container">
       <h1>Регистрация</h1>
-      <textarea class="input" placeholder="Имя пользователя"></textarea>
-      <textarea class="input" placeholder="Электронная почта"></textarea>
-      <textarea class="input" placeholder="Пароль"></textarea>
-      <button class="register-button">Создать аккаунт</button>
+      <textarea
+        class="input"
+        placeholder="Имя пользователя"
+        v-model="username"
+      ></textarea>
+      <textarea
+        class="input"
+        placeholder="Электронная почта"
+        v-model="email"
+      ></textarea>
+      <textarea
+        class="input"
+        placeholder="Пароль"
+        v-model="password"
+      ></textarea>
+      <button class="register-button" @click="register">Создать аккаунт</button>
       <p>Уже есть аккаунт? <a href="/login">Войти</a></p>
     </div>
   </div>
