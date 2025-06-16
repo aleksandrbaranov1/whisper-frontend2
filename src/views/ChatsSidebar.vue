@@ -2,7 +2,7 @@
 import progileLogo from "@/assets/profileLogo2.svg";
 import participantProgileLogo from "@/assets/profileLogo.svg";
 import { ref, onMounted } from "vue";
-
+const search = ref("");
 const chats = ref([]);
 const selectedChat = ref(null);
 const currentUserId = ref(null);
