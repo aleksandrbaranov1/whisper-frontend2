@@ -1,21 +1,35 @@
 <script setup>
-import { ref, onMounted, watch } from "vue";
+window.global = window;
+
+import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import sendMessageIcon from "@/assets/sendMessageIcon.svg";
 import ChatPlaceholder from "@/views/ChatPlaceholder.vue";
+import Message from "@/views/Message.vue";
+import { Client } from "@stomp/stompjs";
+import SockJS from "sockjs-client";
 
 const props = defineProps({
   chat: Object,
 });
 
 const companion = ref(null);
+const messages = ref([]);
+const messageInput = ref("");
+
+const client = new Client();
+const subscription = ref(null);
+
+const senderId = ref(null);
 
 watch(
   () => props.chat,
   async (newChat) => {
+    console.log("Chat changed:", newChat ? newChat.id : "null");
     if (newChat) {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(
+
+        const responseCompanion = await fetch(
           `http://localhost:8080/api/chats/getCompanion/${newChat.id}`,
           {
             headers: {
@@ -24,45 +38,183 @@ watch(
             },
           }
         );
-
-        if (!response.ok) {
+        if (!responseCompanion.ok)
           throw new Error("Ошибка при загрузке собеседника");
-        }
+        companion.value = await responseCompanion.json();
 
-        companion.value = await response.json();
-        console.log("Собеседник:", companion);
+        const responseMessages = await fetch(
+          `http://localhost:8080/messages/chat/${newChat.id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        if (!responseMessages.ok)
+          throw new Error("Ошибка при загрузке сообщений");
+        messages.value = await responseMessages.json();
+
+        console.log("Messages loaded:", messages.value.length);
+
+        if (client.active) {
+          console.log("Client active, subscribing to chat:", newChat.id);
+          subscribeToChat(newChat.id);
+        } else {
+          console.log("Client not active yet");
+        }
       } catch (error) {
-        console.error("Ошибка при получении собеседника:", error);
+        console.error("Ошибка:", error);
       }
+    } else {
+      messages.value = [];
+      companion.value = null;
+      unsubscribeFromChat();
+      console.log("Unsubscribed due to chat reset");
     }
   },
   { immediate: true }
 );
+
+const sendMessage = async () => {
+  const content = messageInput.value.trim();
+  if (!content || !props.chat) return;
+
+  try {
+    const token = localStorage.getItem("token");
+
+    const messageDTO = {
+      content: content,
+      chatId: props.chat.id,
+      senderId: senderId.value,
+    };
+
+    const response = await fetch("http://localhost:8080/messages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(messageDTO),
+    });
+
+    if (!response.ok) throw new Error("Ошибка при отправке сообщения");
+
+    const newMessage = await response.json();
+
+    messages.value.push(newMessage);
+
+    messageInput.value = "";
+    console.log("Message sent and appended:", newMessage);
+  } catch (error) {
+    console.error("Ошибка при отправке сообщения:", error);
+  }
+};
+
+const handleEnterKey = (event) => {
+  if (event.shiftKey) {
+    return;
+  }
+
+  event.preventDefault();
+  sendMessage();
+};
+
+function subscribeToChat(chatId) {
+  unsubscribeFromChat();
+  console.log("Subscribing to topic:", `/topic/chat.${chatId}`);
+
+  subscription.value = client.subscribe(`/topic/chat.${chatId}`, (msg) => {
+    console.log("WS message received:", msg.body);
+    const receivedMessage = JSON.parse(msg.body);
+    messages.value.push(receivedMessage);
+  });
+}
+
+function unsubscribeFromChat() {
+  if (subscription.value) {
+    subscription.value.unsubscribe();
+    subscription.value = null;
+    console.log("Unsubscribed from chat");
+  }
+}
+
+onMounted(async () => {
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await fetch("http://localhost:8080/api/user/getUserIdl", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) throw new Error("Не удалось получить ID пользователя");
+
+    const rawText = await response.text();
+    senderId.value = parseInt(rawText);
+
+    console.log("User ID:", senderId.value);
+
+    client.webSocketFactory = () => new SockJS("http://localhost:8080/ws");
+    client.onConnect = () => {
+      console.log("WebSocket connected");
+      if (props.chat) {
+        console.log("Subscribing to chat on connect:", props.chat.id);
+        subscribeToChat(props.chat.id);
+      }
+    };
+
+    client.onStompError = (frame) => {
+      console.error("STOMP ошибка: ", frame.headers["message"]);
+    };
+    client.activate();
+  } catch (error) {
+    console.error("Ошибка при инициализации:", error);
+  }
+});
+
+onBeforeUnmount(() => {
+  unsubscribeFromChat();
+  client.deactivate();
+  console.log("Component unmounted, WebSocket deactivated");
+});
 </script>
 
 <template>
   <div v-if="props.chat" class="chat-window">
-    <div class="chat-header">
-      <div class="header-text-container">
-        <h1>{{ companion?.name || "Неизвестен" }}</h1>
-      </div>
-    </div>
-    <div class="chat-body">
-      <pre>{{ chat }}</pre>
-    </div>
-    <div class="chat-input-container">
-      <textarea class="chat-input" placeholder="Cообщение"></textarea>
-      <div class="send-button-container">
-        <button class="send-button">
-          <img
-            :src="sendMessageIcon"
-            alt="Отправить сообщение"
-            style="width: 21px; height: 24px"
-          />
-        </button>
-      </div>
-    </div>
+    <header class="chat-header">
+      <h1>{{ companion?.name || "Неизвестен" }}</h1>
+    </header>
+
+    <main class="chat-body">
+      <Message
+        v-for="msg in messages"
+        :key="msg.id"
+        :content="msg.content"
+        :isFromMe="msg.senderId === senderId"
+      />
+    </main>
+
+    <footer class="chat-input-container">
+      <textarea
+        class="chat-input"
+        v-model="messageInput"
+        placeholder="Сообщение"
+        @keydown.enter="handleEnterKey"
+      ></textarea>
+      <button class="send-button" @click="sendMessage">
+        <img
+          :src="sendMessageIcon"
+          alt="Отправить сообщение"
+          width="21"
+          height="24"
+        />
+      </button>
+    </footer>
   </div>
+
   <ChatPlaceholder v-else />
 </template>
 
@@ -70,64 +222,76 @@ watch(
 .chat-window {
   width: 973px;
   height: 100vh;
-  border-right: 1px solid black;
   display: flex;
   flex-direction: column;
+  border-right: 1px solid black;
+  background-color: #fff;
 }
 
 .chat-header {
-  height: 71px;
-  border-bottom: 1px solid black;
-  padding: 10px 20px;
-  flex-shrink: 0;
+  height: 90px;
+  border-bottom: 1px solid gray;
   display: flex;
   align-items: center;
+  padding: 0 20px;
+}
+
+.chat-header h1 {
+  font-size: 24px;
+  font-weight: 400;
+  font-family: "Mallanna", sans-serif;
+  color: black;
 }
 
 .chat-body {
   flex: 1;
-  overflow-y: auto;
   padding: 20px;
+  overflow-y: auto;
   background-color: #f9f9f9;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .chat-input-container {
-  height: 65px;
+  display: flex;
+  align-items: center;
   padding: 7.5px 20px;
-  box-sizing: border-box;
   border: 1px solid black;
   border-radius: 20px;
-  padding-left: 9px;
-  display: flex;
+  margin: 10px 20px;
+  height: 65px;
+  background-color: white;
+  box-sizing: border-box;
 }
 
 .chat-input {
-  height: 50px;
-  padding: 5px 10px 30px 30px;
-  box-sizing: border-box;
-  border-radius: 20px;
-  resize: none;
   flex-grow: 1;
-  width: auto;
-  font-size: 20px;
+  height: 50px;
+  padding: 10px 20px;
+  font-size: 18px;
   font-family: "Mallanna", sans-serif;
-  margin-bottom: 10px;
-  font-weight: 400;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
 }
+
 .send-button {
   width: 50px;
   height: 50px;
-  border-radius: 50%;
+  margin-left: 15px;
   border: none;
+  border-radius: 50%;
   background-color: rgb(66, 82, 204);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
 }
-.send-button-container {
-  padding-left: 15px;
-}
-h1 {
-  font-size: 24px;
-  font-family: "Mallanna", sans-serif;
-  color: black;
-  font-weight: 400;
+
+.send-button img {
+  display: block;
 }
 </style>

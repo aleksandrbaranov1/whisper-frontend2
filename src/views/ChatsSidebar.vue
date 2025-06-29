@@ -107,7 +107,7 @@ function getLastMessageTime(chat) {
   width: 467px;
   height: 100vh;
   background-color: white;
-  border-right: 1px solid black;
+  border-right: 1px solid gray;
   display: flex;
   flex-direction: column;
 }
@@ -115,7 +115,8 @@ function getLastMessageTime(chat) {
   width: 100%;
   height: 90px;
   background-color: white;
-  border: 1px solid black;
+  border-right: 1px solid gray;
+  border-bottom: 1px solid gray;
   align-items: center;
   display: flex;
   justify-content: center;
@@ -165,7 +166,7 @@ function getLastMessageTime(chat) {
   padding-bottom: 12px;
   display: flex;
   position: relative;
-  border: 1px solid black;
+  border: 1px solid gray;
   margin-bottom: 3px;
 }
 .chat-item:hover {
