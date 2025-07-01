@@ -1,12 +1,21 @@
 <script setup>
-defineProps({
+const props = defineProps({
   content: String,
-  isFromMe: Boolean, // true — сообщение от текущего пользователя
+  isFromMe: Boolean,
+  message: Object,
 });
+const emit = defineEmits(["contextmenu"]);
+
+function onRightClick(event) {
+  emit("contextmenu", { event, message: props.message });
+}
 </script>
 
 <template>
-  <div :class="['message-container', isFromMe ? 'from-me' : 'from-them']">
+  <div
+    :class="['message-container', isFromMe ? 'from-me' : 'from-them']"
+    @contextmenu.prevent="onRightClick"
+  >
     <p class="message-text">{{ content }}</p>
   </div>
 </template>

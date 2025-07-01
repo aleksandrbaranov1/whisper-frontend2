@@ -7,7 +7,9 @@ import ChatPlaceholder from "@/views/ChatPlaceholder.vue";
 import Message from "@/views/Message.vue";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
+import ContextMenu from "@/views/ContextMenuMessages.vue";
 
+const contextMenuRef = ref();
 const props = defineProps({
   chat: Object,
 });
@@ -180,6 +182,10 @@ onBeforeUnmount(() => {
   client.deactivate();
   console.log("Component unmounted, WebSocket deactivated");
 });
+
+function handleMessageContextMenu({ event, message }) {
+  contextMenuRef.value?.show(event, message);
+}
 </script>
 
 <template>
@@ -194,8 +200,12 @@ onBeforeUnmount(() => {
         :key="msg.id"
         :content="msg.content"
         :isFromMe="msg.senderId === senderId"
+        :message="msg"
+        @contextmenu="handleMessageContextMenu"
       />
     </main>
+
+    <ContextMenu ref="contextMenuRef" @action="(info) => console.log(info)" />
 
     <footer class="chat-input-container">
       <textarea
