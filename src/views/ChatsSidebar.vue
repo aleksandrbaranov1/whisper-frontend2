@@ -184,14 +184,24 @@ function getLastMessageTime(chat) {
   font-family: "Mallanna", sans-serif;
   font-weight: 400;
   margin-left: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
+
 .chat-item-last {
   color: black;
   font-size: 24px;
   font-family: "Mallanna", sans-serif;
   font-weight: 400;
   margin-left: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
+
 .unread-badge {
   background-color: rgb(0, 123, 255);
   color: white;
@@ -204,20 +214,22 @@ function getLastMessageTime(chat) {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  overflow: hidden;
+  max-width: calc(100% - 110px); /* учитываем аватар и время */
 }
 .chat-item img {
   margin-top: -5px;
+  width: 80px;
+  height: 80px;
 }
 .last-message-time {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 10px;
+  right: 10px;
   color: black;
   font-size: 20px;
   font-family: "Mallanna", sans-serif;
   font-weight: 400;
-  top: 10px;
-  right: 10px;
 }
 .chat-item.selected .chat-item-title,
 .chat-item.selected .chat-item-last,

@@ -62,6 +62,7 @@ watch(
         if (client.active) {
           console.log("Client active, subscribing to chat:", newChat.id);
           subscribeToChat(newChat.id);
+          subscribeToDeletedMessages(newChat.id);
         } else {
           console.log("Client not active yet");
         }
