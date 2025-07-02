@@ -215,7 +215,7 @@ function getLastMessageTime(chat) {
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  max-width: calc(100% - 110px); /* учитываем аватар и время */
+  max-width: calc(100% - 110px);
 }
 .chat-item img {
   margin-top: -5px;

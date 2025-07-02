@@ -223,7 +223,6 @@ async function deleteMessage(messageId) {
 
     if (!response.ok) throw new Error("Ошибка при удалении");
 
-    // Локально удаляем сообщение
     messages.value = messages.value.filter((msg) => msg.id !== messageId);
     console.log("Сообщение удалено локально:", messageId);
   } catch (error) {
