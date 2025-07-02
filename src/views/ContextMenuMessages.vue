@@ -33,15 +33,19 @@ import deleteLogo from "@/assets/deleteLogo.svg";
 import editLogo from "@/assets/editMessageLogo.svg";
 import { ref, nextTick } from "vue";
 
+const emit = defineEmits(["action"]);
+
 const x = ref(0);
 const y = ref(0);
 const visible = ref(false);
 const menuRef = ref(null);
+const currentMessage = ref(null);
 
 function show(event, message) {
   event.preventDefault();
   x.value = event.clientX;
   y.value = event.clientY;
+  currentMessage.value = message;
   visible.value = true;
 
   nextTick(() => {

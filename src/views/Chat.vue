@@ -132,6 +132,13 @@ function subscribeToChat(chatId) {
     messages.value.push(receivedMessage);
   });
 }
+function subscribeToDeletedMessages(chatId) {
+  client.subscribe(`/topic/chats/${chatId}/deleted`, (msg) => {
+    const { messageId } = JSON.parse(msg.body);
+    messages.value = messages.value.filter((m) => m.id !== messageId);
+    console.log("Сообщение удалено через WebSocket:", messageId);
+  });
+}
 
 function unsubscribeFromChat() {
   if (subscription.value) {
@@ -165,6 +172,10 @@ onMounted(async () => {
       if (props.chat) {
         console.log("Subscribing to chat on connect:", props.chat.id);
         subscribeToChat(props.chat.id);
+        if (props.chat) {
+          subscribeToChat(props.chat.id);
+          subscribeToDeletedMessages(props.chat.id);
+        }
       }
     };
 
@@ -186,6 +197,38 @@ onBeforeUnmount(() => {
 function handleMessageContextMenu({ event, message }) {
   contextMenuRef.value?.show(event, message);
 }
+
+function handleContextAction({ action, message }) {
+  if (action === "delete") {
+    deleteMessage(message.id);
+  } else if (action === "edit") {
+    console.log("Редактировать сообщение:", message);
+  }
+}
+
+async function deleteMessage(messageId) {
+  try {
+    const token = localStorage.getItem("token");
+
+    const response = await fetch(
+      `http://localhost:8080/messages/delete/${props.chat.id}/${messageId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!response.ok) throw new Error("Ошибка при удалении");
+
+    // Локально удаляем сообщение
+    messages.value = messages.value.filter((msg) => msg.id !== messageId);
+    console.log("Сообщение удалено локально:", messageId);
+  } catch (error) {
+    console.error("Ошибка при удалении сообщения:", error);
+  }
+}
 </script>
 
 <template>
@@ -205,7 +248,7 @@ function handleMessageContextMenu({ event, message }) {
       />
     </main>
 
-    <ContextMenu ref="contextMenuRef" @action="(info) => console.log(info)" />
+    <ContextMenu ref="contextMenuRef" @action="handleContextAction" />
 
     <footer class="chat-input-container">
       <textarea
