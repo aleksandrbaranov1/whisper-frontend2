@@ -2,10 +2,14 @@
 import progileLogo from "@/assets/profileLogo2.svg";
 import participantProgileLogo from "@/assets/profileLogo.svg";
 import { ref, onMounted } from "vue";
+import SockJS from "sockjs-client";
+import Stomp from "stompjs";
+
 const search = ref("");
 const chats = ref([]);
 const selectedChat = ref(null);
 const currentUserId = ref(null);
+let stompClient = null;
 
 const emit = defineEmits(["chat-selected"]);
 
@@ -18,16 +22,49 @@ const fetchChats = async () => {
   chats.value = await res.json();
 };
 
+const connectWebSocket = () => {
+  const socket = new SockJS("http://localhost:8080/ws");
+  stompClient = Stomp.over(socket);
+  stompClient.debug = null;
+
+  stompClient.connect({}, () => {
+    chats.value.forEach((chat) => {
+      stompClient.subscribe(`/topic/chat.${chat.id}`, (message) => {
+        const newMessage = JSON.parse(message.body);
+        const chatToUpdate = chats.value.find(
+          (c) => c.id === newMessage.chatId
+        );
+
+        if (chatToUpdate) {
+          chatToUpdate.lastMessage = {
+            content: newMessage.content,
+            timestamp: newMessage.timestamp,
+            sender: newMessage.sender,
+          };
+
+          chats.value = [
+            chatToUpdate,
+            ...chats.value.filter((c) => c.id !== chatToUpdate.id),
+          ];
+        }
+      });
+    });
+  });
+};
+
 onMounted(async () => {
   const token = localStorage.getItem("token");
   const res = await fetch("http://localhost:8080/api/profile/me", {
     headers: { Authorization: "Bearer " + token },
   });
+
   if (res.ok) {
     const profile = await res.json();
     currentUserId.value = profile.id;
   }
+
   await fetchChats();
+  connectWebSocket();
 });
 
 function selectChat(chat) {
@@ -47,7 +84,9 @@ function getLastMessage(chat) {
   }
   return "Нет сообщений";
 }
+
 function getLastMessageTime(chat) {
+  if (!chat.lastMessage || !chat.lastMessage.timestamp) return "";
   const timestamp = chat.lastMessage.timestamp;
   const date = new Date(timestamp);
   const hours = String(date.getHours()).padStart(2, "0");
@@ -69,8 +108,7 @@ function getLastMessageTime(chat) {
         </button>
       </div>
       <div>
-        <textarea class="input" placeholder="Поиск" v-model="search">
-        </textarea>
+        <textarea class="input" placeholder="Поиск" v-model="search"></textarea>
       </div>
     </div>
     <div class="chat-list">
@@ -189,7 +227,6 @@ function getLastMessageTime(chat) {
   text-overflow: ellipsis;
   max-width: 100%;
 }
-
 .chat-item-last {
   color: black;
   font-size: 24px;
@@ -201,7 +238,6 @@ function getLastMessageTime(chat) {
   text-overflow: ellipsis;
   max-width: 100%;
 }
-
 .unread-badge {
   background-color: rgb(0, 123, 255);
   color: white;
