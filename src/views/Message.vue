@@ -1,5 +1,7 @@
 <script setup>
 import { computed } from "vue";
+import readLogo from "@/assets/readLogo.svg";
+import notReadLogo from "@/assets/notReadLogo.svg";
 
 const props = defineProps({
   content: String,
@@ -28,9 +30,17 @@ const formattedTime = computed(() => {
     :class="['message-container', isFromMe ? 'from-me' : 'from-them']"
     @contextmenu.prevent="onRightClick"
   >
-    <div class="message-bubble">
+    <div class="message-bubble" :data-id="message.id">
       {{ content }}
-      <span class="message-time">{{ formattedTime }}</span>
+      <span class="message-time">
+        {{ formattedTime }}
+        <img
+          v-if="isFromMe"
+          :src="message.isRead ? readLogo : notReadLogo"
+          alt="Read status"
+          class="read-status-icon"
+        />
+      </span>
     </div>
   </div>
 </template>
@@ -55,13 +65,16 @@ const formattedTime = computed(() => {
 .message-bubble {
   background-color: #e5e5ea;
   color: black;
-  padding: 8px 36px 18px 12px; /* добавили место под время */
+  padding: 8px 12px 12px 12px;
   border-radius: 20px;
   border-bottom-left-radius: 0;
   position: relative;
   display: inline-block;
   word-break: break-word;
   line-height: 1.4;
+  min-width: 80px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .from-me .message-bubble {
@@ -69,15 +82,19 @@ const formattedTime = computed(() => {
   color: white;
   border-bottom-right-radius: 0;
   border-bottom-left-radius: 20px;
+  padding: 8px 12px 12px 12px;
 }
 
 .message-time {
-  position: absolute;
-  bottom: 6px;
-  right: 12px;
+  position: static;
   font-size: 12px;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
 }
 
 .from-them .message-time {

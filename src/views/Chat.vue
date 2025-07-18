@@ -1,7 +1,7 @@
 <script setup>
 window.global = window;
 
-import { ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import sendMessageIcon from "@/assets/sendMessageIcon.svg";
 import ChatPlaceholder from "@/views/ChatPlaceholder.vue";
 import Message from "@/views/Message.vue";
@@ -17,16 +17,61 @@ const props = defineProps({
 const companion = ref(null);
 const messages = ref([]);
 const messageInput = ref("");
-
 const client = new Client();
 const subscription = ref(null);
-
 const senderId = ref(null);
+
+const observer = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        const id = parseInt(entry.target.dataset.id);
+        const msg = messages.value.find((m) => m.id === id);
+        if (msg && !msg.isRead && msg.senderId !== senderId.value) {
+          markMessageAsRead(id);
+        }
+      }
+    }
+  },
+  { threshold: 1.0 }
+);
+
+function markMessageAsRead(messageId) {
+  const token = localStorage.getItem("token");
+  fetch(`http://localhost:8080/messages/mark-read`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      chatId: props.chat.id,
+      messageIds: [messageId],
+    }),
+  })
+    .then(() => {
+      console.log("Marked as read:", messageId);
+    })
+    .catch((err) => {
+      console.error("Error marking as read:", err);
+    });
+}
+
+watch(messages, () => {
+  nextTick(() => {
+    document
+      .querySelectorAll(".message-bubble[data-id]")
+      .forEach((el) => observer.observe(el));
+  });
+});
+
+onBeforeUnmount(() => {
+  observer.disconnect();
+});
 
 watch(
   () => props.chat,
   async (newChat) => {
-    console.log("Chat changed:", newChat ? newChat.id : "null");
     if (newChat) {
       try {
         const token = localStorage.getItem("token");
@@ -57,14 +102,10 @@ watch(
           throw new Error("Ошибка при загрузке сообщений");
         messages.value = await responseMessages.json();
 
-        console.log("Messages loaded:", messages.value.length);
-
         if (client.active) {
-          console.log("Client active, subscribing to chat:", newChat.id);
           subscribeToChat(newChat.id);
           subscribeToDeletedMessages(newChat.id);
-        } else {
-          console.log("Client not active yet");
+          subscribeToReadMessages(newChat.id);
         }
       } catch (error) {
         console.error("Ошибка:", error);
@@ -73,7 +114,6 @@ watch(
       messages.value = [];
       companion.value = null;
       unsubscribeFromChat();
-      console.log("Unsubscribed due to chat reset");
     }
   },
   { immediate: true }
@@ -85,7 +125,6 @@ const sendMessage = async () => {
 
   try {
     const token = localStorage.getItem("token");
-
     const messageDTO = {
       content: content,
       chatId: props.chat.id,
@@ -102,42 +141,52 @@ const sendMessage = async () => {
     });
 
     if (!response.ok) throw new Error("Ошибка при отправке сообщения");
-
     const newMessage = await response.json();
-
-    messages.value.push(newMessage);
-
+    // messages.value.push(newMessage);
     messageInput.value = "";
-    console.log("Message sent and appended:", newMessage);
   } catch (error) {
     console.error("Ошибка при отправке сообщения:", error);
   }
 };
 
 const handleEnterKey = (event) => {
-  if (event.shiftKey) {
-    return;
-  }
-
+  if (event.shiftKey) return;
   event.preventDefault();
   sendMessage();
 };
 
 function subscribeToChat(chatId) {
   unsubscribeFromChat();
-  console.log("Subscribing to topic:", `/topic/chat.${chatId}`);
-
   subscription.value = client.subscribe(`/topic/chat.${chatId}`, (msg) => {
-    console.log("WS message received:", msg.body);
     const receivedMessage = JSON.parse(msg.body);
     messages.value.push(receivedMessage);
+
+    nextTick(() => {
+      const el = document.querySelector(
+        `.message-bubble[data-id="${receivedMessage.id}"]`
+      );
+      if (el) {
+        observer.observe(el);
+      }
+    });
   });
 }
+
 function subscribeToDeletedMessages(chatId) {
   client.subscribe(`/topic/chats/${chatId}/deleted`, (msg) => {
     const { messageId } = JSON.parse(msg.body);
     messages.value = messages.value.filter((m) => m.id !== messageId);
-    console.log("Сообщение удалено через WebSocket:", messageId);
+  });
+}
+
+function subscribeToReadMessages(chatId) {
+  client.subscribe(`/topic/chats/${chatId}/read`, (msg) => {
+    const { messageIds } = JSON.parse(msg.body);
+    console.log("Read event received:", messageIds);
+
+    messages.value = messages.value.map((msg) =>
+      messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
+    );
   });
 }
 
@@ -145,41 +194,31 @@ function unsubscribeFromChat() {
   if (subscription.value) {
     subscription.value.unsubscribe();
     subscription.value = null;
-    console.log("Unsubscribed from chat");
   }
 }
 
 onMounted(async () => {
   try {
     const token = localStorage.getItem("token");
-
     const response = await fetch("http://localhost:8080/api/user/getUserIdl", {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
-
     if (!response.ok) throw new Error("Не удалось получить ID пользователя");
-
     const rawText = await response.text();
     senderId.value = parseInt(rawText);
 
-    console.log("User ID:", senderId.value);
-
     client.webSocketFactory = () => new SockJS("http://localhost:8080/ws");
     client.onConnect = () => {
-      console.log("WebSocket connected");
       if (props.chat) {
-        console.log("Subscribing to chat on connect:", props.chat.id);
-        subscribeToChat(props.chat.id);
-        if (props.chat) {
-          subscribeToChat(props.chat.id);
-          subscribeToDeletedMessages(props.chat.id);
-        }
+        const chatId = props.chat.id;
+        subscribeToChat(chatId);
+        subscribeToDeletedMessages(chatId);
+        subscribeToReadMessages(chatId);
       }
     };
-
     client.onStompError = (frame) => {
       console.error("STOMP ошибка: ", frame.headers["message"]);
     };
@@ -192,7 +231,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unsubscribeFromChat();
   client.deactivate();
-  console.log("Component unmounted, WebSocket deactivated");
 });
 
 function handleMessageContextMenu({ event, message }) {
@@ -210,7 +248,6 @@ function handleContextAction({ action, message }) {
 async function deleteMessage(messageId) {
   try {
     const token = localStorage.getItem("token");
-
     const response = await fetch(
       `http://localhost:8080/messages/delete/${props.chat.id}/${messageId}`,
       {
@@ -220,11 +257,8 @@ async function deleteMessage(messageId) {
         },
       }
     );
-
     if (!response.ok) throw new Error("Ошибка при удалении");
-
     messages.value = messages.value.filter((msg) => msg.id !== messageId);
-    console.log("Сообщение удалено локально:", messageId);
   } catch (error) {
     console.error("Ошибка при удалении сообщения:", error);
   }
@@ -240,7 +274,7 @@ async function deleteMessage(messageId) {
     <main class="chat-body">
       <Message
         v-for="msg in messages"
-        :key="msg.id"
+        :key="msg.id + '-' + (msg.isRead ? 'read' : 'unread')"
         :content="msg.content"
         :isFromMe="msg.senderId === senderId"
         :message="msg"
