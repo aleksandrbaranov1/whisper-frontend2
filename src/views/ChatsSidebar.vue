@@ -6,7 +6,7 @@ import sidebarNotSelectedRead from "@/assets/sidebarNotSelectedRead.svg";
 import sidebarSelectedNotRead from "@/assets/sidebarSelectedNotRead.svg";
 import sidebarSelectedRead from "@/assets/sidebarSelectedRead.svg";
 
-import { ref, onMounted, watch, onBeforeUnmount, computed } from "vue";
+import { onMounted, watch, onBeforeUnmount, ref, computed } from "vue";
 import SockJS from "sockjs-client";
 import Stomp from "stompjs";
 
@@ -172,6 +172,29 @@ const markChatAsRead = async (chat) => {
   }
 };
 
+const toggleSidebar = () => {
+  isSidebarOpen.value = !isSidebarOpen.value;
+};
+
+const closeSidebar = () => {
+  if (window.innerWidth <= 768) isSidebarOpen.value = false;
+};
+
+// при выборе чата — закрываем сайдбар на мобилке
+function selectChat(chat) {
+  selectedChat.value = chat;
+  emit("chat-selected", chat);
+  markChatAsRead(chat);
+  closeSidebar();
+}
+
+// реакция на изменение размера окна — показываем сайдбар по умолчанию на десктопе
+const handleResize = () => {
+  if (window.innerWidth > 768) {
+    isSidebarOpen.value = true;
+  }
+};
+
 onMounted(async () => {
   const token = localStorage.getItem("token");
   const res = await fetch("http://localhost:8080/api/profile/me", {
@@ -185,6 +208,8 @@ onMounted(async () => {
 
   await fetchChats();
   connectWebSocket();
+  handleResize();
+  window.addEventListener("resize", handleResize);
 });
 
 watch(chats, (newChats) => {
@@ -202,54 +227,8 @@ onBeforeUnmount(() => {
   if (stompClient) {
     stompClient.disconnect();
   }
+  window.removeEventListener("resize", handleResize);
 });
-
-// Изменённая функция выбора чата — теперь вызывает markChatAsRead
-function selectChat(chat) {
-  selectedChat.value = chat;
-  emit("chat-selected", chat);
-  markChatAsRead(chat);
-}
-
-function getOtherParticipantName(participants) {
-  if (!currentUserId.value) return "";
-  const other = participants.find((p) => p.id !== currentUserId.value);
-  return other ? other.name : "Неизвестный";
-}
-
-function getLastMessage(chat) {
-  if (chat.lastMessage && chat.lastMessage.content) {
-    return chat.lastMessage.content;
-  }
-  return "Нет сообщений";
-}
-
-function getLastMessageTime(chat) {
-  if (!chat.lastMessage || !chat.lastMessage.timestamp) return "";
-  const timestamp = chat.lastMessage.timestamp;
-  const date = new Date(timestamp);
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-// Иконка статуса прочтения
-function getReadStatusIcon(chat) {
-  const message = chat.lastMessage;
-  if (!message) return null;
-
-  const isFromCurrentUser = message.senderId === currentUserId.value;
-  if (!isFromCurrentUser) return null;
-
-  const isRead = message.isRead;
-  const isSelected = selectedChat.value && selectedChat.value.id === chat.id;
-
-  if (isSelected) {
-    return isRead ? sidebarSelectedRead : sidebarSelectedNotRead;
-  } else {
-    return isRead ? sidebarNotSelectedRead : sidebarNotSelectedNotRead;
-  }
-}
 
 // дебаунс поиска — следим за search
 watch(
@@ -330,70 +309,299 @@ function onItemClick(item) {
     selectChat(item);
   }
 }
+
+function getOtherParticipantName(participants) {
+  if (!currentUserId.value) return "";
+  const other = participants.find((p) => p.id !== currentUserId.value);
+  return other ? other.name : "Неизвестный";
+}
+
+function getLastMessage(chat) {
+  if (chat.lastMessage && chat.lastMessage.content) {
+    return chat.lastMessage.content;
+  }
+  return "Нет сообщений";
+}
+
+function getLastMessageTime(chat) {
+  if (!chat.lastMessage || !chat.lastMessage.timestamp) return "";
+  const timestamp = chat.lastMessage.timestamp;
+  const date = new Date(timestamp);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+// Иконка статуса прочтения
+function getReadStatusIcon(chat) {
+  const message = chat.lastMessage;
+  if (!message) return null;
+
+  const isFromCurrentUser = message.senderId === currentUserId.value;
+  if (!isFromCurrentUser) return null;
+
+  const isRead = message.isRead;
+  const isSelected = selectedChat.value && selectedChat.value.id === chat.id;
+
+  if (isSelected) {
+    return isRead ? sidebarSelectedRead : sidebarSelectedNotRead;
+  } else {
+    return isRead ? sidebarNotSelectedRead : sidebarNotSelectedNotRead;
+  }
+}
 </script>
 
 <template>
-  <div class="chats-sidebar">
-    <div class="sidebar-header">
-      <div>
-        <button class="profile-button">
-          <img
-            :src="progileLogo"
-            alt="Профиль"
-            style="width: 33px; height: 20px"
+  <!-- добавлены классы и оверлей для мобильной версии -->
+  <div>
+    <div
+      class="sidebar-overlay"
+      v-if="isSidebarOpen && window && window.innerWidth <= 768"
+      @click="toggleSidebar"
+    ></div>
+
+    <aside :class="['chats-sidebar', { 'sidebar-open': isSidebarOpen }]">
+      <div class="sidebar-header">
+        <div class="left-header">
+          <button
+            class="profile-button"
+            @click="toggleSidebar"
+            aria-label="toggle sidebar"
+          >
+            <img
+              :src="progileLogo"
+              alt="Профиль"
+              style="width: 33px; height: 20px"
+            />
+          </button>
+        </div>
+
+        <div class="search-wrapper">
+          <!-- заменил textarea на input -->
+          <input
+            class="input"
+            type="search"
+            placeholder="Поиск"
+            v-model="search"
+            aria-label="search"
           />
+        </div>
+
+        <button
+          class="hamburger"
+          @click="toggleSidebar"
+          aria-label="menu"
+          v-if="window && window.innerWidth <= 768"
+        >
+          ☰
         </button>
       </div>
-      <div>
-        <textarea class="input" placeholder="Поиск" v-model="search"></textarea>
-      </div>
-    </div>
-    <div class="chat-list">
-      <div
-        class="chat-item"
-        v-for="item in displayedList"
-        :key="item.id"
-        :class="{
-          selected:
-            !item.isUserResult && selectedChat && selectedChat.id === item.id,
-        }"
-        @click="onItemClick(item)"
-      >
-        <img
-          :src="participantProgileLogo"
-          alt="Профиль"
-          style="width: 80px; height: 80px"
-        />
-        <div class="chat-item-info">
-          <div class="chat-item-title">
-            {{
-              item.isUserResult
-                ? item.name
-                : getOtherParticipantName(item.participants)
-            }}
+
+      <div class="chat-list">
+        <div
+          class="chat-item"
+          v-for="item in displayedList"
+          :key="item.id"
+          :class="{
+            selected:
+              !item.isUserResult && selectedChat && selectedChat.id === item.id,
+          }"
+          @click="onItemClick(item)"
+        >
+          <img
+            :src="participantProgileLogo"
+            alt="Профиль"
+            class="chat-avatar"
+          />
+          <div class="chat-item-info">
+            <div class="chat-item-title">
+              {{
+                item.isUserResult
+                  ? item.name
+                  : getOtherParticipantName(item.participants)
+              }}
+            </div>
+            <div class="chat-item-last">
+              {{ item.isUserResult ? "Начать чат" : getLastMessage(item) }}
+            </div>
           </div>
-          <div class="chat-item-last">
-            {{ item.isUserResult ? "Начать чат" : getLastMessage(item) }}
-          </div>
-        </div>
-        <div class="last-message-time-wrapper">
-          <template v-if="!item.isUserResult && getReadStatusIcon(item)">
-            <img
-              :src="getReadStatusIcon(item)"
-              alt="Статус прочтения"
-              style="width: 20px; height: 20px; margin-right: 5px"
-            />
-          </template>
-          <div class="last-message-time">
-            {{ item.isUserResult ? "" : getLastMessageTime(item) }}
+          <div class="last-message-time-wrapper">
+            <template v-if="!item.isUserResult && getReadStatusIcon(item)">
+              <img
+                :src="getReadStatusIcon(item)"
+                alt="Статус прочтения"
+                style="width: 20px; height: 20px; margin-right: 5px"
+              />
+            </template>
+            <div class="last-message-time">
+              {{ item.isUserResult ? "" : getLastMessageTime(item) }}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </aside>
   </div>
 </template>
 
 <style scoped>
+/* восстановленные/дополнительные стили для сохранения прежнего дизайна + адаптивности */
+
+/* контейнер заголовка */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* левая часть с аватаром */
+.left-header {
+  display: flex;
+  align-items: center;
+}
+
+/* кнопка профиля — убрать дефолтные стили и выровнять */
+.profile-button {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* обёртка поиска занимает оставшееся пространство */
+.search-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* унифицированный вид поля поиска (раньше было для textarea) */
+.input {
+  width: 100%;
+  max-width: 100%;
+  height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111;
+  background: #fafafa;
+  outline: none;
+  box-sizing: border-box;
+}
+
+/* при фокусе — лёгкий акцент */
+.input:focus {
+  border-color: rgba(0, 120, 255, 0.7);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* список чатов */
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* единица чата — выравнивание, отступы и разделитель */
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+  transition: background 0.12s ease;
+}
+.chat-item:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* аватар */
+.chat-avatar {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+/* блок с текстом */
+.chat-item-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* заголовок и превью сообщения — обрезаем по ширине */
+.chat-item-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-item-last {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b6b6b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* время / иконка справа */
+.last-message-time-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: 8px;
+  min-width: 60px;
+}
+.last-message-time {
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+/* выделенный чат */
+.chat-item.selected {
+  background: rgba(0, 120, 255, 0.06);
+}
+
+/* мелкие корректировки для мобильной версии (сохранены из патча) */
+@media (max-width: 768px) {
+  .input {
+    height: 40px;
+    font-size: 16px;
+    padding: 8px 12px;
+  }
+  .chat-avatar {
+    width: 48px;
+    height: 48px;
+  }
+  .chat-item {
+    padding: 10px 12px;
+  }
+  .chat-item-title {
+    font-size: 16px;
+  }
+  .chat-item-last {
+    font-size: 14px;
+  }
+}
+
+/* мобильная и адаптивная логика */
 .chats-sidebar {
   width: 467px;
   height: 100vh;
@@ -401,152 +609,90 @@ function onItemClick(item) {
   border-right: 1px solid gray;
   display: flex;
   flex-direction: column;
+  transition: transform 0.25s ease, width 0.25s ease;
+  z-index: 1000;
 }
-.sidebar-header {
-  width: 100%;
-  height: 90px;
-  background-color: white;
-  border-right: 1px solid gray;
-  border-bottom: 1px solid gray;
-  align-items: center;
-  display: flex;
-  justify-content: center;
-  flex-shrink: 0;
+
+/* overlay для мобильной версии */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 900;
 }
-.profile-button {
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background-color: white;
-  border: none;
+
+/* поведение на мобильных: скрываем по умолчанию (см isSidebarOpen) */
+@media (max-width: 768px) {
+  .chats-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 360px;
+    transform: translateX(-110%); /* скрыто */
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .chats-sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .chat-item {
+    height: 76px;
+  }
+
+  .chat-item-title {
+    font-size: 18px;
+  }
+
+  .chat-item-last {
+    font-size: 16px;
+  }
+
+  .input {
+    width: calc(100% - 32px);
+    height: 40px;
+    font-size: 16px;
+    padding: 8px 12px;
+    margin-left: 10px;
+    margin-top: 16px;
+  }
+
+  .chat-avatar {
+    width: 48px;
+    height: 48px;
+  }
+
+  .last-message-time {
+    font-size: 14px;
+  }
+
+  .sidebar-header {
+    height: 70px;
+    padding: 8px;
+    justify-content: space-between;
+  }
+
+  .hamburger {
+    background: transparent;
+    border: none;
+    font-size: 22px;
+    margin-right: 8px;
+  }
 }
-.profile-button img {
-  margin-top: 4px;
+
+/* поведение на планшетах/малых экранах */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .chats-sidebar {
+    width: 360px;
+  }
 }
-.find-chat-button {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  margin-left: 45px;
-  background-color: rgb(217, 217, 217);
-  border: 1px solid black;
-}
-.buttons-wrapper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-}
-.chat-list {
-  flex: 1 1 auto;
-  overflow-y: scroll;
-  padding: 0 10px;
-  margin-top: 10px;
-  position: relative;
-}
-.chat-item {
-  padding: 10px;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-  box-sizing: border-box;
-  width: 100%;
-  height: 90px;
-  padding-bottom: 12px;
-  display: flex;
-  position: relative;
-  border: 1px solid gray;
-  margin-bottom: 3px;
-}
-.chat-item:hover {
-  background-color: rgb(230, 230, 230);
-}
-.selected {
-  background-color: rgb(66, 82, 204);
-}
-.chat-item.selected:hover {
-  background-color: rgb(66, 82, 204);
-}
-.chat-item-title {
-  color: black;
-  font-size: 24px;
-  font-family: "Mallanna", sans-serif;
-  font-weight: 400;
-  margin-left: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.chat-item-last {
-  color: black;
-  font-size: 24px;
-  font-family: "Mallanna", sans-serif;
-  font-weight: 400;
-  margin-left: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.unread-badge {
-  background-color: rgb(0, 123, 255);
-  color: white;
-  border-radius: 12px;
-  padding: 2px 8px;
-  font-size: 12px;
-  margin-left: 10px;
-}
-.chat-item-info {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
-  max-width: calc(100% - 110px);
-}
-.chat-item img {
-  margin-top: -5px;
-  width: 80px;
-  height: 80px;
-}
-.last-message-time-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  position: absolute;
-  top: 10px;
-  right: 10px;
-}
-.last-message-time {
-  color: black;
-  font-size: 20px;
-  font-family: "Mallanna", sans-serif;
-  font-weight: 400;
-}
-.chat-item.selected .chat-item-title,
-.chat-item.selected .chat-item-last,
-.chat-item.selected .last-message-time {
-  color: #fff;
-}
-.input {
-  resize: none;
-  width: 394px;
-  height: 55px;
-  background-color: rgb(217, 217, 217);
-  font-size: 20px;
-  color: rgb(120, 114, 114);
-  padding-top: 10px;
-  padding-bottom: 10px;
-  box-sizing: border-box;
-  padding-left: 20px;
-  margin-bottom: 31px;
-  font-family: "Mallanna", sans-serif;
-  font-weight: 400;
-  border-radius: 20px;
-  margin-top: 35px;
-  margin-left: 15px;
+
+/* улучшения для десктопа — уменьшаем, если экран очень узкий */
+@media (max-width: 1200px) {
+  .chats-sidebar {
+    width: 420px;
+  }
 }
 </style>
