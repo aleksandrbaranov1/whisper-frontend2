@@ -1,7 +1,12 @@
 <script setup>
 import progileLogo from "@/assets/profileLogo2.svg";
 import participantProgileLogo from "@/assets/profileLogo.svg";
-import { ref, onMounted } from "vue";
+import sidebarNotSelectedNotRead from "@/assets/sidebarNotSelectedNotRead.svg";
+import sidebarNotSelectedRead from "@/assets/sidebarNotSelectedRead.svg";
+import sidebarSelectedNotRead from "@/assets/sidebarSelectedNotRead.svg";
+import sidebarSelectedRead from "@/assets/sidebarSelectedRead.svg";
+
+import { ref, onMounted, watch, onBeforeUnmount, computed } from "vue";
 import SockJS from "sockjs-client";
 import Stomp from "stompjs";
 
@@ -10,8 +15,26 @@ const chats = ref([]);
 const selectedChat = ref(null);
 const currentUserId = ref(null);
 let stompClient = null;
+const subscriptions = new Map();
 
 const emit = defineEmits(["chat-selected"]);
+
+// новые состояния для поиска пользователей
+const userSearchResults = ref([]); // ожидается List<String> от /api/chats/searchUsers
+const isSearchingUsers = ref(false);
+let searchTimeout = null;
+
+const loadMessages = async (chatId) => {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`http://localhost:8080/messages/chat/${chatId}`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) {
+    console.error("Не удалось загрузить сообщения");
+    return [];
+  }
+  return await res.json();
+};
 
 const fetchChats = async () => {
   const token = localStorage.getItem("token");
@@ -22,34 +45,131 @@ const fetchChats = async () => {
   chats.value = await res.json();
 };
 
+// функция поиска пользователей на сервере
+const fetchUsersByQuery = async (q) => {
+  if (!q || q.trim().length < 2) {
+    userSearchResults.value = [];
+    return;
+  }
+  isSearchingUsers.value = true;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `http://localhost:8080/api/chats/searchUsers?name=${encodeURIComponent(
+        q
+      )}`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!res.ok) {
+      userSearchResults.value = [];
+      return;
+    }
+    // ожидаем массив строк (имен)
+    userSearchResults.value = await res.json();
+  } catch (e) {
+    console.error("Ошибка поиска пользователей", e);
+    userSearchResults.value = [];
+  } finally {
+    isSearchingUsers.value = false;
+  }
+};
+
+const subscribeToChat = (chatId) => {
+  if (!stompClient || !stompClient.connected) return;
+
+  if (subscriptions.has(chatId)) {
+    // Уже подписаны
+    return;
+  }
+
+  const subscription = stompClient.subscribe(
+    `/topic/chat.${chatId}`,
+    (message) => {
+      const newMessage = JSON.parse(message.body);
+      console.log("Получено сообщение:", newMessage);
+      const chatToUpdateIndex = chats.value.findIndex(
+        (c) => c.id === newMessage.chatId
+      );
+      if (chatToUpdateIndex === -1) return;
+
+      // Создаём новый объект чата с обновленным lastMessage
+      const updatedChat = {
+        ...chats.value[chatToUpdateIndex],
+        lastMessage: {
+          content: newMessage.content,
+          timestamp: newMessage.timestamp,
+          senderId: newMessage.senderId,
+          isRead: newMessage.isRead,
+        },
+      };
+
+      // Обновляем массив, перемещая обновлённый чат в начало
+      chats.value = [
+        updatedChat,
+        ...chats.value.filter((c) => c.id !== updatedChat.id),
+      ];
+
+      // Если обновился выбранный чат, обновляем selectedChat тоже (чтобы реактивность сработала)
+      if (selectedChat.value && selectedChat.value.id === updatedChat.id) {
+        selectedChat.value = updatedChat;
+      }
+    }
+  );
+
+  subscriptions.set(chatId, subscription);
+};
+
+const unsubscribeFromAll = () => {
+  subscriptions.forEach((sub) => sub.unsubscribe());
+  subscriptions.clear();
+};
+
 const connectWebSocket = () => {
   const socket = new SockJS("http://localhost:8080/ws");
   stompClient = Stomp.over(socket);
   stompClient.debug = null;
 
   stompClient.connect({}, () => {
-    chats.value.forEach((chat) => {
-      stompClient.subscribe(`/topic/chat.${chat.id}`, (message) => {
-        const newMessage = JSON.parse(message.body);
-        const chatToUpdate = chats.value.find(
-          (c) => c.id === newMessage.chatId
-        );
-
-        if (chatToUpdate) {
-          chatToUpdate.lastMessage = {
-            content: newMessage.content,
-            timestamp: newMessage.timestamp,
-            sender: newMessage.sender,
-          };
-
-          chats.value = [
-            chatToUpdate,
-            ...chats.value.filter((c) => c.id !== chatToUpdate.id),
-          ];
-        }
-      });
-    });
+    // Подписываемся на все чаты
+    chats.value.forEach((chat) => subscribeToChat(chat.id));
   });
+};
+
+// Отправка запроса на сервер о том, что чат прочитан
+const markChatAsRead = async (chat) => {
+  try {
+    const messages = await loadMessages(chat.id);
+    const messageIds = messages.map((msg) => msg.id);
+
+    if (messageIds.length === 0) {
+      console.log("Нет сообщений для отметки как прочитанных");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    const res = await fetch("http://localhost:8080/messages/mark-read", {
+      method: "PATCH",
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chatId: chat.id,
+        messageIds,
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn("Не удалось отметить чат как прочитанный");
+      return;
+    }
+
+    console.log("Чат отмечен как прочитанный");
+
+    // Можно локально обновить chat.lastMessage.isRead и/или сообщения, если хочешь
+  } catch (error) {
+    console.error("Ошибка при отметке чата как прочитанного", error);
+  }
 };
 
 onMounted(async () => {
@@ -67,9 +187,28 @@ onMounted(async () => {
   connectWebSocket();
 });
 
+watch(chats, (newChats) => {
+  if (stompClient && stompClient.connected) {
+    // Отписываемся от старых
+    unsubscribeFromAll();
+
+    // Подписываемся на новые
+    newChats.forEach((chat) => subscribeToChat(chat.id));
+  }
+});
+
+onBeforeUnmount(() => {
+  unsubscribeFromAll();
+  if (stompClient) {
+    stompClient.disconnect();
+  }
+});
+
+// Изменённая функция выбора чата — теперь вызывает markChatAsRead
 function selectChat(chat) {
   selectedChat.value = chat;
   emit("chat-selected", chat);
+  markChatAsRead(chat);
 }
 
 function getOtherParticipantName(participants) {
@@ -93,6 +232,104 @@ function getLastMessageTime(chat) {
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
 }
+
+// Иконка статуса прочтения
+function getReadStatusIcon(chat) {
+  const message = chat.lastMessage;
+  if (!message) return null;
+
+  const isFromCurrentUser = message.senderId === currentUserId.value;
+  if (!isFromCurrentUser) return null;
+
+  const isRead = message.isRead;
+  const isSelected = selectedChat.value && selectedChat.value.id === chat.id;
+
+  if (isSelected) {
+    return isRead ? sidebarSelectedRead : sidebarSelectedNotRead;
+  } else {
+    return isRead ? sidebarNotSelectedRead : sidebarNotSelectedNotRead;
+  }
+}
+
+// дебаунс поиска — следим за search
+watch(
+  () => search.value,
+  (val) => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      const q = val ? val.trim() : "";
+      if (q.length >= 2) {
+        fetchUsersByQuery(q);
+      } else {
+        userSearchResults.value = [];
+      }
+    }, 350);
+  }
+);
+
+// объединённый список для отображения: сначала совпадающие чаты, затем найденные пользователи (если для них ещё нет чата)
+const displayedList = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  const chatMatches = !q
+    ? chats.value
+    : chats.value.filter((chat) =>
+        getOtherParticipantName(chat.participants).toLowerCase().includes(q)
+      );
+
+  const userItems = (userSearchResults.value || [])
+    .filter((name) => {
+      if (!name) return false;
+      // исключаем пользователей, у которых уже есть чат (по совпадению имени собеседника)
+      return !chatMatches.some(
+        (c) =>
+          getOtherParticipantName(c.participants).toLowerCase() ===
+          name.toLowerCase()
+      );
+    })
+    .map((name) => ({
+      id: `user-${name}`,
+      isUserResult: true,
+      name,
+    }));
+
+  return [...chatMatches, ...userItems];
+});
+
+// создание приватного чата по имени пользователя (использует backend POST /api/chats/private?user2Name=...)
+const createPrivateChatWithName = async (userName) => {
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `http://localhost:8080/api/chats/private?user2Name=${encodeURIComponent(
+        userName
+      )}`,
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+      }
+    );
+    if (!res.ok) {
+      console.warn("Не удалось создать приватный чат");
+      return;
+    }
+    const newChat = await res.json();
+    // добавляем в начало списка чатов и выбираем его
+    chats.value = [newChat, ...chats.value.filter((c) => c.id !== newChat.id)];
+    // подписываемся на новый чат, если есть ws
+    if (stompClient && stompClient.connected) subscribeToChat(newChat.id);
+    selectChat(newChat);
+  } catch (e) {
+    console.error("Ошибка создания приватного чата", e);
+  }
+};
+
+function onItemClick(item) {
+  if (item && item.isUserResult) {
+    createPrivateChatWithName(item.name);
+  } else {
+    selectChat(item);
+  }
+}
 </script>
 
 <template>
@@ -114,10 +351,13 @@ function getLastMessageTime(chat) {
     <div class="chat-list">
       <div
         class="chat-item"
-        v-for="chat in chats"
-        :key="chat.id"
-        :class="{ selected: selectedChat && selectedChat.id === chat.id }"
-        @click="selectChat(chat)"
+        v-for="item in displayedList"
+        :key="item.id"
+        :class="{
+          selected:
+            !item.isUserResult && selectedChat && selectedChat.id === item.id,
+        }"
+        @click="onItemClick(item)"
       >
         <img
           :src="participantProgileLogo"
@@ -126,13 +366,26 @@ function getLastMessageTime(chat) {
         />
         <div class="chat-item-info">
           <div class="chat-item-title">
-            {{ getOtherParticipantName(chat.participants) }}
+            {{
+              item.isUserResult
+                ? item.name
+                : getOtherParticipantName(item.participants)
+            }}
           </div>
           <div class="chat-item-last">
-            {{ getLastMessage(chat) }}
+            {{ item.isUserResult ? "Начать чат" : getLastMessage(item) }}
           </div>
+        </div>
+        <div class="last-message-time-wrapper">
+          <template v-if="!item.isUserResult && getReadStatusIcon(item)">
+            <img
+              :src="getReadStatusIcon(item)"
+              alt="Статус прочтения"
+              style="width: 20px; height: 20px; margin-right: 5px"
+            />
+          </template>
           <div class="last-message-time">
-            {{ getLastMessageTime(chat) }}
+            {{ item.isUserResult ? "" : getLastMessageTime(item) }}
           </div>
         </div>
       </div>
@@ -192,6 +445,7 @@ function getLastMessageTime(chat) {
   overflow-y: scroll;
   padding: 0 10px;
   margin-top: 10px;
+  position: relative;
 }
 .chat-item {
   padding: 10px;
@@ -258,10 +512,15 @@ function getLastMessageTime(chat) {
   width: 80px;
   height: 80px;
 }
-.last-message-time {
+.last-message-time-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   position: absolute;
   top: 10px;
   right: 10px;
+}
+.last-message-time {
   color: black;
   font-size: 20px;
   font-family: "Mallanna", sans-serif;
