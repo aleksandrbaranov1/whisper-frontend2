@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Алиасируем node-пакет 'websocket' на браузерный WebSocket
+      websocket: path.resolve(__dirname, "./src/shims/websocket-browser.js"),
     },
   },
   server: {
@@ -15,5 +17,8 @@ export default defineConfig({
   },
   define: {
     global: "window",
+  },
+  optimizeDeps: {
+    exclude: ["websocket"],
   },
 });
