@@ -10,7 +10,7 @@ const router = useRouter();
 
 async function register() {
   try {
-    const response = await fetch("http://127.0.0.1:8080/api/auth/register", {
+    const response = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -30,7 +30,7 @@ async function register() {
 }
 async function login() {
   try {
-    const response = await fetch("http://127.0.0.1:8080/api/auth/login", {
+    const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

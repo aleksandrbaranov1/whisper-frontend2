@@ -38,7 +38,7 @@ const loadMessages = async (chatId) => {
 
 const fetchChats = async () => {
   const token = localStorage.getItem("token");
-  const res = await fetch("http://localhost:8080/api/chats/my", {
+  const res = await fetch("/api/chats/my", {
     headers: { Authorization: "Bearer " + token },
   });
   if (!res.ok) throw new Error("Ошибка загрузки чатов");
@@ -125,7 +125,7 @@ const unsubscribeFromAll = () => {
 };
 
 const connectWebSocket = () => {
-  const socket = new SockJS("http://localhost:8080/ws");
+  const socket = new SockJS("/ws");
   stompClient = Stomp.over(socket);
   stompClient.debug = null;
 
@@ -174,7 +174,7 @@ const markChatAsRead = async (chat) => {
 
 onMounted(async () => {
   const token = localStorage.getItem("token");
-  const res = await fetch("http://localhost:8080/api/profile/me", {
+  const res = await fetch("/api/profile/me", {
     headers: { Authorization: "Bearer " + token },
   });
 

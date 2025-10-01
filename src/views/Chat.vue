@@ -38,7 +38,7 @@ const observer = new IntersectionObserver(
 
 function markMessageAsRead(messageId) {
   const token = localStorage.getItem("token");
-  fetch(`http://localhost:8080/messages/mark-read`, {
+  fetch(`/messages/mark-read`, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -77,7 +77,7 @@ watch(
         const token = localStorage.getItem("token");
 
         const responseCompanion = await fetch(
-          `http://localhost:8080/api/chats/getCompanion/${newChat.id}`,
+          `/api/chats/getCompanion/${newChat.id}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -90,7 +90,7 @@ watch(
         companion.value = await responseCompanion.json();
 
         const responseMessages = await fetch(
-          `http://localhost:8080/messages/chat/${newChat.id}`,
+          `/messages/chat/${newChat.id}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -131,7 +131,7 @@ const sendMessage = async () => {
       senderId: senderId.value,
     };
 
-    const response = await fetch("http://localhost:8080/messages", {
+    const response = await fetch("/messages", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -200,7 +200,7 @@ function unsubscribeFromChat() {
 onMounted(async () => {
   try {
     const token = localStorage.getItem("token");
-    const response = await fetch("http://localhost:8080/api/user/getUserIdl", {
+    const response = await fetch("/api/user/getUserIdl", {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -210,7 +210,7 @@ onMounted(async () => {
     const rawText = await response.text();
     senderId.value = parseInt(rawText);
 
-    client.webSocketFactory = () => new SockJS("http://localhost:8080/ws");
+    client.webSocketFactory = () => new SockJS("/ws");
     client.onConnect = () => {
       if (props.chat) {
         const chatId = props.chat.id;
@@ -249,7 +249,7 @@ async function deleteMessage(messageId) {
   try {
     const token = localStorage.getItem("token");
     const response = await fetch(
-      `http://localhost:8080/messages/delete/${props.chat.id}/${messageId}`,
+      `/messages/delete/${props.chat.id}/${messageId}`,
       {
         method: "DELETE",
         headers: {
