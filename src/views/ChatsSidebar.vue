@@ -26,7 +26,7 @@ let searchTimeout = null;
 
 const loadMessages = async (chatId) => {
   const token = localStorage.getItem("token");
-  const res = await fetch(`http://localhost:8080/messages/chat/${chatId}`, {
+  const res = await fetch(`/messages/chat/${chatId}`, {
     headers: { Authorization: "Bearer " + token },
   });
   if (!res.ok) {
@@ -55,9 +55,7 @@ const fetchUsersByQuery = async (q) => {
   try {
     const token = localStorage.getItem("token");
     const res = await fetch(
-      `http://localhost:8080/api/chats/searchUsers?name=${encodeURIComponent(
-        q
-      )}`,
+      `/api/chats/searchUsers?name=${encodeURIComponent(q)}`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!res.ok) {
@@ -147,7 +145,7 @@ const markChatAsRead = async (chat) => {
     }
 
     const token = localStorage.getItem("token");
-    const res = await fetch("http://localhost:8080/messages/mark-read", {
+    const res = await fetch("/messages/mark-read", {
       method: "PATCH",
       headers: {
         Authorization: "Bearer " + token,
@@ -300,9 +298,7 @@ const createPrivateChatWithName = async (userName) => {
   try {
     const token = localStorage.getItem("token");
     const res = await fetch(
-      `http://localhost:8080/api/chats/private?user2Name=${encodeURIComponent(
-        userName
-      )}`,
+      `/api/chats/private?user2Name=${encodeURIComponent(userName)}`,
       {
         method: "POST",
         headers: { Authorization: "Bearer " + token },
