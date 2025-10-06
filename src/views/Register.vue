@@ -7,7 +7,8 @@ const username = ref("");
 const email = ref("");
 const password = ref("");
 const code = ref("");
-const step = ref(1); // Этап регистрации
+const step = ref(1);
+const showPassword = ref(false);
 const router = useRouter();
 
 async function requestCode() {
@@ -89,13 +90,24 @@ async function login() {
         placeholder="Электронная почта"
         v-model="email"
       ></textarea>
-      <textarea
-        class="input"
-        placeholder="Пароль"
-        v-model="password"
-      ></textarea>
 
-      <!-- Блок для шагов -->
+      <div class="password-wrapper">
+        <input
+          :type="showPassword ? 'text' : 'password'"
+          class="input password-input"
+          placeholder="Пароль"
+          v-model="password"
+        />
+        <button
+          v-if="password.length > 0"
+          type="button"
+          class="toggle-btn"
+          @click="showPassword = !showPassword"
+        >
+          {{ showPassword ? "Скрыть" : "Показать" }}
+        </button>
+      </div>
+
       <div class="step-block" v-if="step === 1">
         <button class="register-button" @click="requestCode">
           Получить код подтверждения
@@ -144,12 +156,11 @@ async function login() {
   border-radius: 20px;
 }
 
-/* Добавлен новый класс для выравнивания шагов */
 .step-block {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center; /* центрирует поле и кнопку */
+  align-items: center;
 }
 
 h1 {
@@ -175,6 +186,32 @@ h1 {
   border-radius: 10px;
   font-family: "Mallanna", sans-serif;
   font-weight: 400;
+}
+
+.password-wrapper {
+  display: flex;
+  width: 466px;
+  position: relative;
+  align-items: center;
+}
+
+.password-input {
+  flex-grow: 1;
+  padding-right: 80px;
+}
+
+.toggle-btn {
+  position: absolute;
+  right: 20px;
+  background: none;
+  border: none;
+  color: rgb(66, 82, 204);
+  font-size: 16px;
+  cursor: pointer;
+  font-family: "Mallanna", sans-serif;
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 
 .register-button {
@@ -213,5 +250,59 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .registration-container {
+    width: 90%;
+    padding: 20px;
+  }
+
+  .input {
+    width: 100%;
+    height: 50px;
+    font-size: 16px;
+  }
+
+  .register-button {
+    width: 100%;
+    height: 50px;
+    font-size: 18px;
+  }
+
+  .password-wrapper {
+    width: 100%;
+  }
+
+  .toggle-btn {
+    font-size: 14px;
+    right: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 28px;
+  }
+
+  .input {
+    font-size: 14px;
+    height: 45px;
+  }
+
+  .register-button {
+    font-size: 16px;
+    height: 45px;
+  }
+
+  p,
+  a {
+    font-size: 14px;
+  }
+}
+@media (max-width: 768px) {
+  .logo-wrapper {
+    display: none;
+  }
 }
 </style>

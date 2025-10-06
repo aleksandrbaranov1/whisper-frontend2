@@ -13,6 +13,7 @@ const contextMenuRef = ref();
 const props = defineProps({
   chat: Object,
 });
+const emit = defineEmits(["exit-chat"]);
 
 const companion = ref(null);
 const messages = ref([]);
@@ -89,15 +90,12 @@ watch(
           throw new Error("Ошибка при загрузке собеседника");
         companion.value = await responseCompanion.json();
 
-        const responseMessages = await fetch(
-          `/messages/chat/${newChat.id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        const responseMessages = await fetch(`/messages/chat/${newChat.id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
         if (!responseMessages.ok)
           throw new Error("Ошибка при загрузке сообщений");
         messages.value = await responseMessages.json();
@@ -141,8 +139,6 @@ const sendMessage = async () => {
     });
 
     if (!response.ok) throw new Error("Ошибка при отправке сообщения");
-    const newMessage = await response.json();
-    // messages.value.push(newMessage);
     messageInput.value = "";
   } catch (error) {
     console.error("Ошибка при отправке сообщения:", error);
@@ -182,8 +178,6 @@ function subscribeToDeletedMessages(chatId) {
 function subscribeToReadMessages(chatId) {
   client.subscribe(`/topic/chats/${chatId}/read`, (msg) => {
     const { messageIds } = JSON.parse(msg.body);
-    console.log("Read event received:", messageIds);
-
     messages.value = messages.value.map((msg) =>
       messageIds.includes(msg.id) ? { ...msg, isRead: true } : msg
     );
@@ -263,12 +257,17 @@ async function deleteMessage(messageId) {
     console.error("Ошибка при удалении сообщения:", error);
   }
 }
+
+function exitChat() {
+  emit("exit-chat");
+}
 </script>
 
 <template>
   <div v-if="props.chat" class="chat-window">
     <header class="chat-header">
       <h1>{{ companion?.name || "Неизвестен" }}</h1>
+      <button class="exit-chat-button" @click="exitChat">×</button>
     </header>
 
     <main class="chat-body">
@@ -328,6 +327,21 @@ async function deleteMessage(messageId) {
   font-weight: 400;
   font-family: "Mallanna", sans-serif;
   color: black;
+}
+
+.exit-chat-button {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  font-weight: bold;
+  color: black;
+  cursor: pointer;
+  margin-left: auto;
+  padding: 0 10px;
+}
+
+.exit-chat-button:hover {
+  color: red;
 }
 
 .chat-body {
